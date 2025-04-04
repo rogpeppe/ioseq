@@ -154,19 +154,22 @@ func (w *seqWriter) Write(buf []byte) (int, error) {
 	return len(buf), nil
 }
 
-func WriterWriterToReaderSeq(f func(w io.Writer) io.WriteCloser) func(io.Reader) Seq {
-	return func(r io.Reader) Seq {
+// WriteFuncToSeq returns a function equivalent to f but phrased in terms
+// of Seq, which can be more convenient. When the returned function
+// is called, it will call f, making its written result available on the returned
+// iterator.
+func WriterFuncToSeq(f func(w io.Writer) io.WriteCloser) func(r Seq) Seq {
+	return func(seq Seq) Seq {
 		return func(yield func([]byte, error) bool) {
+			send := func(w io.WriteCloser, seq Seq) error {
+				if _, err := CopySeq(w, seq); err != nil {
+					return err
+				}
+				return w.Close()
+			}
 			seqw := &seqWriter{yield: yield}
 			w := f(seqw)
-
-			_, err := io.CopyBuffer(f(w), r, make([]byte, 8192))
-			if !seqw.closed && err != nil {
-				if !yield(nil, err) {
-					return
-				}
-			}
-			if err := w.Close(); err != nil {
+			if err := send(w, seq); err != nil && !seqw.closed {
 				yield(nil, err)
 			}
 		}
