@@ -1,6 +1,7 @@
 package ioseq_test
 
 import (
+	"compress/gzip"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -26,4 +27,28 @@ func ExampleReaderFromSeq() {
 
 	// Output:
 	// aGVsbG8sIHdvcmxkCg==
+}
+
+func ExampleWriterFuncToSeq() {
+	compress := ioseq.WriterFuncToSeq(func(w io.Writer) io.WriteCloser {
+		return gzip.NewWriter(w)
+	})
+	zeros := func(yield func([]byte, error) bool) {
+		buf := make([]byte, 8192)
+		for i := 0; i < 1000; i++ {
+			if !yield(buf, nil) {
+				return
+			}
+		}
+	}
+	n := 0
+	for data, err := range compress(zeros) {
+		if err != nil {
+			panic(err)
+		}
+		n += len(data)
+	}
+	fmt.Println(n)
+	// Output:
+	// 7988
 }
