@@ -1,51 +1,10 @@
 package ioseq
 
 import (
-	"encoding/base64"
 	"io"
 	"testing"
 	"testing/iotest"
 )
-
-func BenchmarkBase64EncodeSeqReader(b *testing.B) {
-	b.SetBytes(8192)
-	r := ReaderFromSeq(func(yield func([]byte, error) bool) {
-		w := base64.NewEncoder(base64.StdEncoding, SeqWriter(yield))
-		defer w.Close()
-		buf := make([]byte, 8192)
-		for b.Loop() {
-			if _, err := w.Write(buf); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-	defer r.Close()
-	_, err := io.Copy(io.Discard, r)
-	if err != nil {
-		b.Fatal(err)
-	}
-}
-
-func BenchmarkBase64EncodePipeReader(b *testing.B) {
-	b.SetBytes(8192)
-	pr, pw := io.Pipe()
-	w := base64.NewEncoder(base64.StdEncoding, pw)
-	go func() {
-		defer pw.Close()
-		defer w.Close()
-		buf := make([]byte, 8192)
-		for b.Loop() {
-			if _, err := w.Write(buf); err != nil {
-				b.Fatal(err)
-			}
-		}
-	}()
-
-	_, err := io.Copy(io.Discard, pr)
-	if err != nil {
-		b.Fatal(err)
-	}
-}
 
 func TestReaderFromSeqEarlyClose(t *testing.T) {
 	var closeCalled bool
