@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"slices"
 )
 
 // Seq represents a sequence of byte slices. It's somewhat equivalent to
@@ -37,6 +38,10 @@ func SeqFromReader(r io.Reader, bufSize int) Seq {
 				if err == io.EOF {
 					err = nil
 				}
+				// Note: we _could_ call slices.Clip on the buffer
+				// here, but there's no particular reason to do so:
+				// if the rest of the buffer is overwritten by the
+				// consumer, it doesn't make any difference.
 				if len(buf) > 0 && !yield(buf[:n], nil) {
 					return
 				}
@@ -119,7 +124,8 @@ type seqWriter struct {
 var ErrSequenceTerminated = errors.New("sequence terminated")
 
 func (w *seqWriter) Write(buf []byte) (int, error) {
-	if w.closed || !w.yield(buf, nil) {
+	if w.closed || !w.yield(slices.Clip(buf), nil) {
+		w.closed = true
 		return 0, ErrSequenceTerminated
 	}
 	return len(buf), nil
