@@ -27,7 +27,7 @@ import (
 // allow callers to mutate, but not append to, the slice].
 type Seq = iter.Seq2[[]byte, error]
 
-// SeqFromReader returns a [Seq] that reads from r, allocating a buffer
+// SeqFromReader returns a [Seq] that reads from r, allocating one buffer
 // of the given size to do so.
 func SeqFromReader(r io.Reader, bufSize int) Seq {
 	return func(yield func([]byte, error) bool) {
@@ -58,7 +58,7 @@ func SeqFromReader(r io.Reader, bufSize int) Seq {
 }
 
 // ReaderFromSeq converts an iterator into an io.ReadCloser.
-// Close must be called on the reader if it hasn't returned an error.
+// Close must be called after the caller is done with the reader.
 func ReaderFromSeq(it Seq) io.ReadCloser {
 	next, close := iter.Pull2(it)
 	return &iterReader{
@@ -102,6 +102,24 @@ func (r *iterReader) Close() error {
 		}
 	}
 	return nil
+}
+
+// CopySeq is like [io.Copy] but reads over r writing
+// all the data to w. It returns the total number of bytes
+// read.
+func CopySeq(w io.Writer, r Seq) (int64, error) {
+	tot := int64(0)
+	for data, err := range r {
+		if err != nil {
+			return tot, err
+		}
+		n, err := w.Write(data)
+		tot += int64(n)
+		if err != nil {
+			return tot, err
+		}
+	}
+	return tot, nil
 }
 
 // SeqWriter returns a [Writer] that operates on the yield

@@ -8,7 +8,7 @@ import (
 )
 
 // perflock go test -bench . -count 10 > /tmp/b
-//  benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
+// benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
 
 func BenchmarkPipeBase64(b *testing.B) {
 	benchmarkPipe(b, func(w io.Writer) io.WriteCloser {
