@@ -8,7 +8,8 @@ import (
 )
 
 // perflock go test -bench . -count 10 > /tmp/b
-// benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
+// # benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
+// benchstat -col=/kind -row .name /tmp/b
 
 func BenchmarkPipeBase64(b *testing.B) {
 	benchmarkPipe(b, func(w io.Writer) io.WriteCloser {
@@ -113,6 +114,20 @@ func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func(
 		defer r.Close()
 		readAllAndWork(r, consumeWork)
 	})
+}
+
+func BenchmarkWriterFuncToSeqBase64(b *testing.B) {
+	f := WriterFuncToSeq(func(w io.Writer) io.WriteCloser {
+		return base64.NewEncoder(base64.StdEncoding, w)
+	})
+	b.SetBytes(8192)
+	buf := make([]byte, 8192)
+	for range f(func(yield func([]byte, error) bool) {
+		for b.Loop() {
+			yield(buf, nil)
+		}
+	}) {
+	}
 }
 
 func readAllAndWork(r io.Reader, work func([]byte)) {
