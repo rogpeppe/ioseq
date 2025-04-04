@@ -115,6 +115,24 @@ func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func(
 	})
 }
 
+func BenchmarkWibbleBase64(b *testing.B) {
+	f := WriterWriterToReaderSeq(func(w io.Writer) io.WriteCloser {
+		return base64.NewEncoder(base64.StdEncoding, w)
+	})
+	b.SetBytes(8192)
+	for _, err := range f(io.LimitReader(infiniteReader{}, int64(b.N*8192))) {
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+type infiniteReader struct{}
+
+func (infiniteReader) Read(buf []byte) (int, error) {
+	return len(buf), nil
+}
+
 func readAllAndWork(r io.Reader, work func([]byte)) {
 	buf := make([]byte, 8192)
 	for {

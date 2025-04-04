@@ -148,3 +148,22 @@ func (w *seqWriter) Write(buf []byte) (int, error) {
 	}
 	return len(buf), nil
 }
+
+func WriterWriterToReaderSeq(f func(w io.Writer) io.WriteCloser) func(io.Reader) Seq {
+	return func(r io.Reader) Seq {
+		return func(yield func([]byte, error) bool) {
+			seqw := &seqWriter{yield: yield}
+			w := f(seqw)
+
+			_, err := io.CopyBuffer(f(w), r, make([]byte, 8192))
+			if !seqw.closed && err != nil {
+				if !yield(nil, err) {
+					return
+				}
+			}
+			if err := w.Close(); err != nil {
+				yield(nil, err)
+			}
+		}
+	}
+}
