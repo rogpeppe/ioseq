@@ -104,9 +104,14 @@ func (r *iterReader) Close() error {
 	return nil
 }
 
-// CopySeq is like [io.Copy] but reads over r writing
+// CopySeq is like [Copy] but reads over r writing
 // all the data to w. It returns the total number of bytes
-// read.
+// transferred.
+//
+// Note that, unlike [Copy], it does not actually copy
+// any of the bytes and does not require a buffer:
+// it just passes the byte slices received from r
+// directly to w.Write.
 func CopySeq(w io.Writer, r Seq) (int64, error) {
 	tot := int64(0)
 	for data, err := range r {
