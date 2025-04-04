@@ -8,7 +8,7 @@ import (
 )
 
 // perflock go test -bench . -count 10 > /tmp/b
-//  benchstat -col=/kind -row .name /tmp/b
+//  benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
 
 func BenchmarkPipeBase64(b *testing.B) {
 	benchmarkPipe(b, func(w io.Writer) io.WriteCloser {
@@ -20,14 +20,6 @@ func BenchmarkPipeNoop(b *testing.B) {
 	benchmarkPipe(b, func(w io.Writer) io.WriteCloser {
 		return nopCloser{w}
 	})
-}
-
-type nopCloser struct {
-	io.Writer
-}
-
-func (nopCloser) Close() error {
-	return nil
 }
 
 func benchmarkPipe(b *testing.B, f func(w io.Writer) io.WriteCloser) {
@@ -71,32 +63,17 @@ func benchmarkPipe(b *testing.B, f func(w io.Writer) io.WriteCloser) {
 }
 
 func BenchmarkReaderNoop(b *testing.B) {
-	benchmarkReader(b, func([]byte) {}, func([]byte) {})
+	benchmarkReader(b, noop, noop)
 }
 
 func BenchmarkReaderFillIndex(b *testing.B) {
-	benchmarkReader(b, func(data []byte) {
-		for i := range data {
-			data[i] = 'x'
-		}
-	}, func(data []byte) {
-		bytes.IndexByte(data, 'y')
-	})
+	benchmarkReader(b, fill, index)
 }
 
 func benchmarkReader(b *testing.B, produceWork, consumeWork func([]byte)) {
 	b.Run("kind=new", func(b *testing.B) {
 		b.SetBytes(8192)
-		seq := func(yield func([]byte, error) bool) {
-			buf := make([]byte, 8192)
-			for b.Loop() {
-				produceWork(buf)
-				if !yield(buf, nil) {
-					return
-				}
-			}
-		}
-		for data, err := range seq {
+		for data, err := range produceAndWork(b, produceWork) {
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -105,19 +82,60 @@ func benchmarkReader(b *testing.B, produceWork, consumeWork func([]byte)) {
 	})
 	b.Run("kind=old", func(b *testing.B) {
 		b.SetBytes(8192)
-		r := workReader{
+		r := &workReader{
 			work: produceWork,
 			n:    b.N,
 		}
+		readAllAndWork(r, consumeWork)
+	})
+}
+
+func BenchmarkReaderVsSeqFromReaderNoop(b *testing.B) {
+	benchmarkReaderVsSeqFromReader(b, noop, noop)
+}
+
+func BenchmarkReaderVsSeqFromReaderFillIndex(b *testing.B) {
+	benchmarkReaderVsSeqFromReader(b, fill, index)
+}
+
+func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func([]byte)) {
+	b.Run("kind=old", func(b *testing.B) {
+		b.SetBytes(8192)
+		r := &workReader{
+			work: produceWork,
+			n:    b.N,
+		}
+		readAllAndWork(r, consumeWork)
+	})
+	b.Run("kind=new", func(b *testing.B) {
+		b.SetBytes(8192)
+		r := ReaderFromSeq(produceAndWork(b, produceWork))
+		defer r.Close()
+		readAllAndWork(r, consumeWork)
+	})
+}
+
+func readAllAndWork(r io.Reader, work func([]byte)) {
+	buf := make([]byte, 8192)
+	for {
+		n, err := r.Read(buf)
+		if err != nil {
+			return
+		}
+		work(buf[:n])
+	}
+}
+
+func produceAndWork(b *testing.B, work func([]byte)) Seq {
+	return func(yield func([]byte, error) bool) {
 		buf := make([]byte, 8192)
-		for {
-			n, err := r.Read(buf)
-			if err != nil {
+		for b.Loop() {
+			work(buf)
+			if !yield(buf, nil) {
 				return
 			}
-			consumeWork(buf[:n])
 		}
-	})
+	}
 }
 
 type workReader struct {
@@ -133,4 +151,24 @@ func (r *workReader) Read(buf []byte) (int, error) {
 	r.work(buf)
 	r.i++
 	return len(buf), nil
+}
+
+func noop([]byte) {}
+
+type nopCloser struct {
+	io.Writer
+}
+
+func (nopCloser) Close() error {
+	return nil
+}
+
+func fill(data []byte) {
+	for i := range data {
+		data[i] = 'x'
+	}
+}
+
+func index(data []byte) {
+	bytes.IndexByte(data, 'y')
 }
