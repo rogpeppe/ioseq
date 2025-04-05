@@ -1,7 +1,10 @@
 package ioseq
 
 import (
+	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"testing"
 	"testing/iotest"
 )
@@ -35,6 +38,74 @@ func TestReaderFromSeqEarlyClose(t *testing.T) {
 	r.Close()
 	if !closeCalled {
 		t.Fatalf("close not called")
+	}
+}
+
+var seqFromReaderTests = []struct {
+	testName string
+	in       func() io.Reader
+	want     []string
+	wantErr  string
+}{{
+	testName: "OneByte",
+	in: func() io.Reader {
+		return iotest.OneByteReader(strings.NewReader("foo bar"))
+	},
+
+	want: strings.Split("foo bar", ""),
+}, {
+	testName: "DataErrEOF",
+	in: func() io.Reader {
+		return iotest.DataErrReader(strings.NewReader("foo bar"))
+	},
+	want: []string{"foo bar"},
+}, {
+	testName: "NonEOFError",
+	in: func() io.Reader {
+		return io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(fmt.Errorf("some error")))
+	},
+	want:    []string{"foo"},
+	wantErr: "some error",
+}, {
+	testName: "NonDataErrNonEOF",
+	in: func() io.Reader {
+		return iotest.DataErrReader(
+			io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(fmt.Errorf("some error"))),
+		)
+	},
+	want:    []string{"foo"},
+	wantErr: "some error",
+}}
+
+func TestSeqFromReader(t *testing.T) {
+	for _, test := range seqFromReaderTests {
+		t.Run(test.testName, func(t *testing.T) {
+			var got []string
+			var gotErr error
+			for data, err := range SeqFromReader(test.in(), 32*1024) {
+				if err != nil {
+					if gotErr != nil {
+						t.Fatalf("got two error values (%v then %v)", gotErr, err)
+					}
+					gotErr = err
+					continue
+				}
+				got = append(got, string(data))
+			}
+			if !slices.Equal(got, test.want) {
+				t.Errorf("unexpected results;\ngot %q\nwant %q", got, test.want)
+			}
+			if test.wantErr != "" {
+				if gotErr == nil {
+					t.Errorf("expected error %q but got none", test.wantErr)
+				}
+				if got, want := gotErr.Error(), test.wantErr; got != want {
+					t.Errorf("unexpected error value; got %q want %q", got, want)
+				}
+			} else if gotErr != nil {
+				t.Errorf("unexpected error: %v", gotErr)
+			}
+		})
 	}
 }
 

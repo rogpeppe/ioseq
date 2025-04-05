@@ -42,7 +42,7 @@ func SeqFromReader(r io.Reader, bufSize int) Seq {
 				// here, but there's no particular reason to do so:
 				// if the rest of the buffer is overwritten by the
 				// consumer, it doesn't make any difference.
-				if len(buf) > 0 && !yield(buf[:n], nil) {
+				if n > 0 && !yield(buf[:n], nil) {
 					return
 				}
 				if err != nil {
