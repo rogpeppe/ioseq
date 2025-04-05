@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -28,7 +30,7 @@ func benchmarkPipe(b *testing.B, f func(w io.Writer) io.WriteCloser) {
 			w := f(SeqWriter(yield))
 			defer w.Close()
 			buf := make([]byte, 8192)
-			for b.Loop() {
+			for range b.N {
 				if _, err := w.Write(buf); err != nil {
 					b.Fatal(err)
 				}
@@ -48,7 +50,7 @@ func benchmarkPipe(b *testing.B, f func(w io.Writer) io.WriteCloser) {
 			defer pw.Close()
 			defer w.Close()
 			buf := make([]byte, 8192)
-			for b.Loop() {
+			for range b.N {
 				if _, err := w.Write(buf); err != nil {
 					b.Fatal(err)
 				}
@@ -119,11 +121,59 @@ func BenchmarkWriterFuncToSeqBase64(b *testing.B) {
 	b.SetBytes(8192)
 	buf := make([]byte, 8192)
 	for range f(func(yield func([]byte, error) bool) {
-		for b.Loop() {
+		for range b.N {
 			yield(buf, nil)
 		}
 	}) {
 	}
+}
+
+func BenchmarkBase64HTTPPost(b *testing.B) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		io.Copy(io.Discard, req.Body)
+	}))
+	defer srv.Close()
+	b.Run("kind=old", func(b *testing.B) {
+		b.SetBytes(8192)
+		in := io.LimitReader(unlimited{}, int64(b.N*8192))
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			w := newBase64Encoder(pw)
+			io.Copy(w, in)
+		}()
+		_, err := http.Post(srv.URL, "application/text", pr)
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
+	b.Run("kind=new", func(b *testing.B) {
+		b.SetBytes(8192)
+		in := io.LimitReader(unlimited{}, int64(b.N*8192))
+		_, err := http.Post(srv.URL, "application/gzip", PipeThrough(in, newBase64Encoder, 8192))
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
+	b.Run("kind=newNoWriterTo", func(b *testing.B) {
+		b.SetBytes(8192)
+		in := io.LimitReader(unlimited{}, int64(b.N*8192))
+		_, err := http.Post(srv.URL, "application/gzip", noWriterTo{PipeThrough(in, newBase64Encoder, 8192)})
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
+}
+
+type noWriterTo struct{ io.Reader }
+
+func nopEncoder(w io.Writer) io.WriteCloser { return nopCloser{w} }
+
+type unlimited struct{}
+
+func (unlimited) Read(buf []byte) (int, error) {
+	fill(buf)
+	return len(buf), nil
 }
 
 func readAllAndWork(r io.Reader, work func([]byte)) {
@@ -140,7 +190,7 @@ func readAllAndWork(r io.Reader, work func([]byte)) {
 func produceAndWork(b *testing.B, work func([]byte)) Seq {
 	return func(yield func([]byte, error) bool) {
 		buf := make([]byte, 8192)
-		for b.Loop() {
+		for range b.N {
 			work(buf)
 			if !yield(buf, nil) {
 				return
@@ -164,7 +214,7 @@ func (r *workReader) Read(buf []byte) (int, error) {
 	return len(buf), nil
 }
 
-func noop([]byte) {}
+func noop(data []byte) {}
 
 type nopCloser struct {
 	io.Writer
@@ -174,16 +224,25 @@ func (nopCloser) Close() error {
 	return nil
 }
 
-func fill(data []byte) {
-	for i := range data {
-		data[i] = 'x'
-	}
-}
-
 func index(data []byte) {
 	bytes.IndexByte(data, 'y')
 }
 
 func newBase64Encoder(w io.Writer) io.WriteCloser {
 	return base64.NewEncoder(base64.StdEncoding, w)
+}
+
+func fill(b []byte) {
+	fillByte(b, 'x')
+}
+
+func fillByte(b []byte, value byte) {
+	if len(b) == 0 {
+		return
+	}
+
+	b[0] = value
+	for i := 1; i < len(b); i *= 2 {
+		copy(b[i:], b[:i])
+	}
 }

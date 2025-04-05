@@ -59,22 +59,40 @@ func SeqFromReader(r io.Reader, bufSize int) Seq {
 
 // ReaderFromSeq converts an iterator into an io.ReadCloser.
 // Close must be called after the caller is done with the reader.
-func ReaderFromSeq(it Seq) io.ReadCloser {
-	next, close := iter.Pull2(it)
+func ReaderFromSeq(seq Seq) io.ReadCloser {
 	return &iterReader{
-		next:  next,
-		close: close,
+		seq: seq,
 	}
 }
 
 type iterReader struct {
+	seq Seq
+
 	next  func() ([]byte, error, bool)
 	close func()
 	err   error
 	data  []byte
 }
 
+// WriteTo implements [WriterTo].
+func (r *iterReader) WriteTo(w io.Writer) (int64, error) {
+	if r.seq != nil {
+		// Read hasn't been called yet, we can just use the
+		// iterator directly, saving the cost of iter.Pull2.
+		n, err := CopySeq(w, r.seq)
+		// Subsequent reads should return EOF.
+		r.seq = func(func([]byte, error) bool) {}
+		return n, err
+	}
+	return io.Copy(w, r)
+}
+
 func (r *iterReader) Read(buf []byte) (int, error) {
+	if r.seq != nil {
+		r.next, r.close = iter.Pull2(r.seq)
+		// Can't use the fast path in WriteTo any more.
+		r.seq = nil
+	}
 	if r.err != nil {
 		return 0, r.err
 	}
@@ -169,4 +187,9 @@ func WriterFuncToSeq[W io.WriteCloser](f func(w io.Writer) W) func(r Seq) Seq {
 			}
 		}
 	}
+}
+
+// PipeThrough returns a reader that pipes the content from r through f.
+func PipeThrough[W io.WriteCloser](r io.Reader, f func(io.Writer) W, bufSize int) io.Reader {
+	return ReaderFromSeq(WriterFuncToSeq(f)(SeqFromReader(r, bufSize)))
 }
