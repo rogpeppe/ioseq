@@ -11,7 +11,7 @@ import (
 
 // perflock go test -bench . -count 10 > /tmp/b
 // # benchstat -filter '.name:/ReaderVsSeqFromReader/' -col=/kind -row .name /tmp/b
-// benchstat -col=/kind -row .name /tmp/b
+// benchstat '-col=/kind@(newNoWriterTo new)' -row .name /tmp/b
 
 func BenchmarkPipeBase64(b *testing.B) {
 	benchmarkPipe(b, newBase64Encoder)
@@ -116,8 +116,8 @@ func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func(
 	})
 }
 
-func BenchmarkWriterFuncToSeqBase64(b *testing.B) {
-	f := WriterFuncToSeq(newBase64Encoder)
+func BenchmarkSeqFromWriterFuncBase64(b *testing.B) {
+	f := SeqFromWriterFunc(newBase64Encoder)
 	b.SetBytes(8192)
 	buf := make([]byte, 8192)
 	for range f(func(yield func([]byte, error) bool) {

@@ -171,7 +171,7 @@ func (w *seqWriter) Write(buf []byte) (int, error) {
 // of Seq, which can be more convenient. When the returned function
 // is called, it will call f, making its written result available on the returned
 // iterator.
-func WriterFuncToSeq[W io.WriteCloser](f func(w io.Writer) W) func(r Seq) Seq {
+func SeqFromWriterFunc[W io.WriteCloser](f func(w io.Writer) W) func(r Seq) Seq {
 	return func(seq Seq) Seq {
 		return func(yield func([]byte, error) bool) {
 			send := func(w io.WriteCloser, seq Seq) error {
@@ -191,5 +191,5 @@ func WriterFuncToSeq[W io.WriteCloser](f func(w io.Writer) W) func(r Seq) Seq {
 
 // PipeThrough returns a reader that pipes the content from r through f.
 func PipeThrough[W io.WriteCloser](r io.Reader, f func(io.Writer) W, bufSize int) io.Reader {
-	return ReaderFromSeq(WriterFuncToSeq(f)(SeqFromReader(r, bufSize)))
+	return ReaderFromSeq(SeqFromWriterFunc(f)(SeqFromReader(r, bufSize)))
 }

@@ -29,8 +29,8 @@ func ExampleReaderFromSeq() {
 	// aGVsbG8sIHdvcmxkCg==
 }
 
-func ExampleWriterFuncToSeq() {
-	compress := ioseq.WriterFuncToSeq(func(w io.Writer) io.WriteCloser {
+func ExampleSeqFromWriterFunc() {
+	compress := ioseq.SeqFromWriterFunc(func(w io.Writer) io.WriteCloser {
 		return gzip.NewWriter(w)
 	})
 	zeros := func(yield func([]byte, error) bool) {
