@@ -12,9 +12,7 @@ import (
 // benchstat -col=/kind -row .name /tmp/b
 
 func BenchmarkPipeBase64(b *testing.B) {
-	benchmarkPipe(b, func(w io.Writer) io.WriteCloser {
-		return base64.NewEncoder(base64.StdEncoding, w)
-	})
+	benchmarkPipe(b, newBase64Encoder)
 }
 
 func BenchmarkPipeNoop(b *testing.B) {
@@ -117,9 +115,7 @@ func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func(
 }
 
 func BenchmarkWriterFuncToSeqBase64(b *testing.B) {
-	f := WriterFuncToSeq(func(w io.Writer) io.WriteCloser {
-		return base64.NewEncoder(base64.StdEncoding, w)
-	})
+	f := WriterFuncToSeq(newBase64Encoder)
 	b.SetBytes(8192)
 	buf := make([]byte, 8192)
 	for range f(func(yield func([]byte, error) bool) {
@@ -186,4 +182,8 @@ func fill(data []byte) {
 
 func index(data []byte) {
 	bytes.IndexByte(data, 'y')
+}
+
+func newBase64Encoder(w io.Writer) io.WriteCloser {
+	return base64.NewEncoder(base64.StdEncoding, w)
 }
