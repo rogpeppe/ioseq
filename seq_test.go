@@ -75,6 +75,20 @@ var seqFromReaderTests = []struct {
 	},
 	want:    []string{"foo"},
 	wantErr: "some error",
+}, {
+	testName: "SeqFromReaderOfReaderOfSeq",
+	in: func() io.Reader {
+		return ReaderFromSeq(func(yield func([]byte, error) bool) {
+			for i := 0; i < 4; i++ {
+				if !yield([]byte(fmt.Sprintf("%.02d", i)), nil) {
+					return
+				}
+			}
+		})
+	},
+	want: []string{
+		"00", "01", "02", "03",
+	},
 }}
 
 func TestSeqFromReader(t *testing.T) {
@@ -95,15 +109,31 @@ func TestSeqFromReader(t *testing.T) {
 			if !slices.Equal(got, test.want) {
 				t.Errorf("unexpected results;\ngot %q\nwant %q", got, test.want)
 			}
-			if test.wantErr != "" {
-				if gotErr == nil {
-					t.Errorf("expected error %q but got none", test.wantErr)
+
+			testResults := func() {
+				if test.wantErr != "" {
+					if gotErr == nil {
+						t.Errorf("expected error %q but got none", test.wantErr)
+					}
+					if got, want := gotErr.Error(), test.wantErr; got != want {
+						t.Errorf("unexpected error value; got %q want %q", got, want)
+					}
+				} else if gotErr != nil {
+					t.Errorf("unexpected error: %v", gotErr)
 				}
-				if got, want := gotErr.Error(), test.wantErr; got != want {
-					t.Errorf("unexpected error value; got %q want %q", got, want)
+			}
+			testResults()
+
+			if len(test.want) > 1 && test.wantErr == "" {
+				// Test the iterator-stopped path.
+				got = nil
+				gotErr = nil
+				for data, err := range SeqFromReader(test.in(), 32*1024) {
+					got = append(got, string(data))
+					gotErr = err
 				}
-			} else if gotErr != nil {
-				t.Errorf("unexpected error: %v", gotErr)
+				test.want = test.want[:1]
+				testResults()
 			}
 		})
 	}

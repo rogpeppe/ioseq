@@ -28,8 +28,24 @@ import (
 type Seq = iter.Seq2[[]byte, error]
 
 // SeqFromReader returns a [Seq] that reads from r, allocating one buffer
-// of the given size to do so.
+// of the given size to do so unless r implements [WriterTo], in which
+// case no buffer is needed.
 func SeqFromReader(r io.Reader, bufSize int) Seq {
+	if r, ok := r.(io.WriterTo); ok {
+		return func(yield func([]byte, error) bool) {
+			active := true
+			_, err := r.WriteTo(writerFunc(func(data []byte) (int, error) {
+				if !yield(data, nil) {
+					active = false
+					return 0, ErrSequenceTerminated
+				}
+				return len(data), nil
+			}))
+			if err != nil && active {
+				yield(nil, err)
+			}
+		}
+	}
 	return func(yield func([]byte, error) bool) {
 		buf := make([]byte, bufSize)
 		for {
@@ -55,6 +71,12 @@ func SeqFromReader(r io.Reader, bufSize int) Seq {
 			}
 		}
 	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(buf []byte) (int, error) {
+	return f(buf)
 }
 
 // ReaderFromSeq converts an iterator into an io.ReadCloser.
