@@ -181,7 +181,7 @@ func TestReaderFromSeq(t *testing.T) {
 
 func TestSeqWriterWillNotCallYieldAfterTermination(t *testing.T) {
 	seq := func(yield func([]byte, error) bool) {
-		w := SeqWriter(yield)
+		w := SeqWriter(yield, nil)
 		w.Write([]byte("one"))
 		// This will panic if the writer does not respect the yield result.
 		w.Write([]byte("two"))
@@ -194,7 +194,7 @@ func TestSeqWriterWillNotCallYieldAfterTermination(t *testing.T) {
 func TestSeqWriterClipsSlice(t *testing.T) {
 	seq := func(yield func([]byte, error) bool) {
 		buf := []byte("foobar")
-		w := SeqWriter(yield)
+		w := SeqWriter(yield, nil)
 		w.Write(buf[:3])
 		if got, want := string(buf), "foobar"; got != want {
 			t.Fatalf("slice was not clipped; want %q got %q", got, want)

@@ -16,7 +16,7 @@ func ExampleReaderFromSeq() {
 	// Demonstrate how we'd use ReaderFromSeq to work around
 	// that limitation without using io.Pipe.
 	seq := func(yield func([]byte, error) bool) {
-		w := base64.NewEncoder(base64.StdEncoding, ioseq.SeqWriter(yield))
+		w := base64.NewEncoder(base64.StdEncoding, ioseq.SeqWriter(yield, nil))
 		defer w.Close()
 		fmt.Fprintf(w, "hello, world\n")
 	}
@@ -29,10 +29,7 @@ func ExampleReaderFromSeq() {
 	// aGVsbG8sIHdvcmxkCg==
 }
 
-func ExampleSeqFromWriterFunc() {
-	compress := ioseq.SeqFromWriterFunc(func(w io.Writer) io.WriteCloser {
-		return gzip.NewWriter(w)
-	})
+func ExamplePipeSeqThrough() {
 	zeros := func(yield func([]byte, error) bool) {
 		buf := make([]byte, 8192)
 		for i := 0; i < 1000; i++ {
@@ -42,7 +39,7 @@ func ExampleSeqFromWriterFunc() {
 		}
 	}
 	n := 0
-	for data, err := range compress(zeros) {
+	for data, err := range ioseq.PipeSeqThrough(zeros, gzip.NewWriter) {
 		if err != nil {
 			panic(err)
 		}

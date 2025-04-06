@@ -170,20 +170,38 @@ func CopySeq(w io.Writer, r Seq) (int64, error) {
 // The returned Writer should not be used outside the scope
 // of the iterator function, following the same rules as any yield
 // function.
-func SeqWriter(yield func([]byte, error) bool) io.Writer {
-	return &seqWriter{yield: yield}
+//
+// If active is non-nil, it reflects the "active" status of the generator
+// and its value should be (but does not have to be) true initially.
+// yield will not be called when *active is false.
+// If yield returns false, *active will be set to false.
+//
+// The caller can use the value of *active to find out whether
+// the iterator is still active.
+func SeqWriter(yield func([]byte, error) bool, active *bool) io.Writer {
+	if active == nil {
+		active = new(bool)
+		*active = true
+	}
+	return seqWriter{
+		yield:  yield,
+		active: active,
+	}
 }
 
 type seqWriter struct {
 	yield  func([]byte, error) bool
-	closed bool
+	active *bool
 }
 
 var ErrSequenceTerminated = errors.New("sequence terminated")
 
-func (w *seqWriter) Write(buf []byte) (int, error) {
-	if w.closed || !w.yield(slices.Clip(buf), nil) {
-		w.closed = true
+func (w seqWriter) Write(buf []byte) (int, error) {
+	if !*w.active {
+		return 0, ErrSequenceTerminated
+	}
+	if !w.yield(slices.Clip(buf), nil) {
+		*w.active = false
 		return 0, ErrSequenceTerminated
 	}
 	return len(buf), nil
@@ -193,25 +211,37 @@ func (w *seqWriter) Write(buf []byte) (int, error) {
 // of Seq, which can be more convenient. When the returned function
 // is called, it will call f, making its written result available on the returned
 // iterator.
-func SeqFromWriterFunc[W io.WriteCloser](f func(w io.Writer) W) func(r Seq) Seq {
-	return func(seq Seq) Seq {
-		return func(yield func([]byte, error) bool) {
-			send := func(w io.WriteCloser, seq Seq) error {
-				if _, err := CopySeq(w, seq); err != nil {
-					return err
-				}
-				return w.Close()
+func PipeSeqThrough[W io.WriteCloser](seq Seq, f func(w io.Writer) W) Seq {
+	return func(yield func([]byte, error) bool) {
+		send := func(w io.WriteCloser, seq Seq) error {
+			if _, err := CopySeq(w, seq); err != nil {
+				return err
 			}
-			seqw := &seqWriter{yield: yield}
-			w := f(seqw)
-			if err := send(w, seq); err != nil && !seqw.closed {
-				yield(nil, err)
-			}
+			return w.Close()
+		}
+		active := true
+		w := f(SeqWriter(yield, &active))
+		if err := send(w, seq); err != nil && active {
+			yield(nil, err)
 		}
 	}
 }
 
 // PipeThrough returns a reader that pipes the content from r through f.
 func PipeThrough[W io.WriteCloser](r io.Reader, f func(io.Writer) W, bufSize int) io.Reader {
-	return ReaderFromSeq(SeqFromWriterFunc(f)(SeqFromReader(r, bufSize)))
+	in := SeqFromReader(r, bufSize)
+	out := PipeSeqThrough(in, f)
+	return ReaderFromSeq(out)
+}
+
+// ReaderWithContent returns a [Reader] that calls the given function to generate the
+// data to be read. If the function returns an error, that error will
+// be returned from the reader.
+func ReaderWithContent(generate func(w io.Writer) error) io.ReadCloser {
+	return ReaderFromSeq(func(yield func([]byte, error) bool) {
+		active := true
+		if err := generate(SeqWriter(yield, &active)); err != nil && active {
+			yield(nil, err)
+		}
+	})
 }

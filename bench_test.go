@@ -27,7 +27,7 @@ func benchmarkPipe(b *testing.B, f func(w io.Writer) io.WriteCloser) {
 	b.Run("kind=new", func(b *testing.B) {
 		b.SetBytes(8192)
 		r := ReaderFromSeq(func(yield func([]byte, error) bool) {
-			w := f(SeqWriter(yield))
+			w := f(SeqWriter(yield, nil))
 			defer w.Close()
 			buf := make([]byte, 8192)
 			for range b.N {
@@ -117,14 +117,14 @@ func benchmarkReaderVsSeqFromReader(b *testing.B, produceWork, consumeWork func(
 }
 
 func BenchmarkSeqFromWriterFuncBase64(b *testing.B) {
-	f := SeqFromWriterFunc(newBase64Encoder)
 	b.SetBytes(8192)
 	buf := make([]byte, 8192)
-	for range f(func(yield func([]byte, error) bool) {
+	in := func(yield func([]byte, error) bool) {
 		for range b.N {
 			yield(buf, nil)
 		}
-	}) {
+	}
+	for range PipeSeqThrough(in, newBase64Encoder) {
 	}
 }
 
