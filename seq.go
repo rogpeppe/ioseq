@@ -207,10 +207,12 @@ func (w seqWriter) Write(buf []byte) (int, error) {
 	return len(buf), nil
 }
 
-// WriteFuncToSeq returns a function equivalent to f but phrased in terms
-// of Seq, which can be more convenient. When the returned function
-// is called, it will call f, making its written result available on the returned
-// iterator.
+// PipeSeqThrough returns a Seq that iterates over the data written
+// by the function f to its argument Writer. The Writer implementation
+// that it returns will be written with the data read from seq.
+//
+// In other words, data read from seq will be "piped through" f,
+// resulting in a new Seq.
 func PipeSeqThrough[W io.WriteCloser](seq Seq, f func(w io.Writer) W) Seq {
 	return func(yield func([]byte, error) bool) {
 		send := func(w io.WriteCloser, seq Seq) error {
@@ -227,8 +229,13 @@ func PipeSeqThrough[W io.WriteCloser](seq Seq, f func(w io.Writer) W) Seq {
 	}
 }
 
-// PipeThrough returns a reader that pipes the content from r through f.
-func PipeThrough[W io.WriteCloser](r io.Reader, f func(io.Writer) W, bufSize int) io.Reader {
+// PipeThrough calls f; all data written by f to its argument writer
+// will be made available on the returned ReadCloser; all data read from
+// f will be written to the writer implementation returned by f.
+//
+// In other words, it returns a reader that "pipes" the content from r
+// through f.
+func PipeThrough[W io.WriteCloser](r io.Reader, f func(io.Writer) W, bufSize int) io.ReadCloser {
 	in := SeqFromReader(r, bufSize)
 	out := PipeSeqThrough(in, f)
 	return ReaderFromSeq(out)
