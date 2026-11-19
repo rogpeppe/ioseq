@@ -106,7 +106,7 @@ func (r *iterReader) WriteTo(w io.Writer) (int64, error) {
 		r.seq = func(func([]byte, error) bool) {}
 		return n, err
 	}
-	return io.Copy(w, r)
+	return io.Copy(w, struct{ io.Reader }{r})
 }
 
 func (r *iterReader) Read(buf []byte) (int, error) {
